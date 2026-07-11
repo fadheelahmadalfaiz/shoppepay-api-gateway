@@ -9,6 +9,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "data.db");
 
+let app;
+
 async function downloadDbFromSupabase() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     console.log("[SUPABASE] Kredensial tidak lengkap, menggunakan DB lokal.");
@@ -106,7 +108,7 @@ async function start() {
   const adminRoutes = require("./src/routes/admin");
   const webhookRoutes = require("./src/routes/webhook");
 
-const app = express();
+app = express();
 const PORT = process.env.PORT || 3000;
 
 // ──── Middleware ────────────────────────────────────────────────
