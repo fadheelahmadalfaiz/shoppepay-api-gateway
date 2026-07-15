@@ -20,7 +20,6 @@ API Gateway berkinerja tinggi, ringan, dan **100% Stateless (tanpa database & ta
 > *   ✅ **Tidak ada credential yang keluar**: Token & API Key Anda disimpan di berkas `.env` di server Anda sendiri dan **tidak pernah dikirim ke pihak lain manapun** selain ke server resmi ShopeePay Partner.
 > *   ✅ **Read-Only & Non-Destruktif**: Gateway ini **hanya membaca** data mutasi dan tidak melakukan operasi yang mengubah saldo, menarik dana, atau memodifikasi akun Anda.
 > *   ✅ **Zero Third-Party**: Tidak ada layanan cloud pihak ketiga, webhook publik, atau proxy eksternal yang terlibat. Semua lalu lintas data berjalan langsung dari server Anda ke `shopeepay.shopee.co.id`.
-> *   ✅ **Open-Source Auditable**: Kode sumber gateway dapat diaudit sepenuhnya untuk memverifikasi tidak adanya aktivitas berbahaya.
 >
 > **Penggunaan sepenuhnya menjadi tanggung jawab pengguna.** Pastikan Anda memahami Syarat & Ketentuan ShopeePay Partner yang berlaku di negara Anda sebelum menggunakannya di lingkungan produksi komersial.
 
