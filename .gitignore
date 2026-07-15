@@ -4,3 +4,6 @@ shoppepay.db
 shoppepay.db-journal
 *.log
 .DS_Store
+server-*
+*.exe
+gateway*
