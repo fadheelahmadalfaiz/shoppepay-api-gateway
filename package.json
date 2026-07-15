@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server-raw.js",
+    "build": "javascript-obfuscator server-raw.js --output server.js --self-defending true --control-flow-flattening true --dead-code-injection true --string-array-encoding rc4"
   },
   "dependencies": {
     "axios": "^1.7.2",
