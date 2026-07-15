@@ -52,7 +52,22 @@ sequenceDiagram
 *   **Dynamic Multi-Token (Multi-Store Routing)**: Mendukung pengelolaan multi-akun/merchant. Anda dapat mengirimkan token Shopee yang berbeda via header HTTP `X-Shopee-Token` di setiap request.
 *   **Automatic Issuer Resolution**: Melakukan query data sekunder untuk mendeteksi metode/aplikasi pembayaran asal pengirim (seperti Seabank, OVO, DANA, BCA, Bank Mandiri, dll).
 *   **Live Token Validator & Alert Telegram**: Melakukan uji coba token setiap 5 menit. Jika terdeteksi mati atau dikeluarkan (*force logout*), notifikasi diagnostik detail akan dikirim langsung ke Bot Telegram Anda.
+*   **In-Memory Transaction Deduplication (Anti-Double Claim)**: Mengamankan verifikasi nominal kembar secara stateless. Gateway secara otomatis mencatat `transactionId` yang sukses diklaim ke dalam RAM (dibersihkan otomatis setiap 24 jam) untuk mencegah manipulasi klaim ganda.
 *   **In-Memory Circular Logs**: Menyimpan 100 log aktivitas terakhir di RAM server untuk pemantauan operasional yang mudah diakses via endpoint terproteksi `/api/logs`.
+
+---
+
+## 🛡️ Penanganan Kolisi Nominal Kembar (Payment Collisions)
+
+Karena API ini bersifat *Stateless* (tanpa database permanen), jika ada dua pelanggan berbeda melakukan checkout dengan nominal yang sama persis (misalnya Rp 50.000) pada waktu bersamaan, sistem rawan mengalami *double claim* (satu bukti bayar diklaim oleh dua orang berbeda).
+
+Untuk mencegah hal tersebut, sistem ini didesain menggunakan pengaman ganda:
+
+1.  **Deduplikasi di Sisi API Gateway (In-Memory Tracking)**:
+    API Gateway secara dinamis menyimpan `transactionId` yang sukses divalidasi ke dalam memori *Map* server (RAM). Jika ada transaksi verifikasi masuk menggunakan nomor resi yang sudah pernah terpakai dalam 24 jam terakhir, gateway akan otomatis mengabaikannya (`paid: false`).
+2.  **Rekomendasi di Sisi Aplikasi Toko Utama**:
+    *   **Gunakan Kode Unik**: Tambahkan kode unik (Rp 1 s/d Rp 99) pada nominal tagihan yang dihasilkan oleh aplikasi Anda saat membuat QRIS.
+    *   **Deduplikasi Database Toko**: Simpan data `transactionId` yang dikembalikan oleh respon sukses `/check-payment` ke database aplikasi Anda. Pastikan sistem Anda menolak proses kelunasan jika `transactionId` tersebut sudah pernah terdaftar di database Anda sebelumnya.
 
 ---
 
