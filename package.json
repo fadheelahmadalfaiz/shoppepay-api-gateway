@@ -7,7 +7,8 @@
     "start": "node server.js",
     "start:core": "node core-gateway.js",
     "dev": "nodemon server.js",
-    "build": "javascript-obfuscator server-raw.js --output core-gateway.js --self-defending true --control-flow-flattening true --dead-code-injection true --string-array-encoding rc4"
+    "build": "node -e \"console.log('No build step — core-gateway.js is prebuilt')\"",
+    "obfuscate": "javascript-obfuscator server-raw.js --output core-gateway.js --self-defending true --control-flow-flattening true --dead-code-injection true --string-array-encoding rc4"
   },
   "dependencies": {
     "axios": "^1.7.2",
