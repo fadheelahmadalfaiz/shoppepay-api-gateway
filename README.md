@@ -1,16 +1,20 @@
-# 🚀 ShopeePay Partner API Gateway (Stateless Edition)
+# 🚀 ShopeePay Partner API Gateway — PG Auto-Check Edition (Fork)
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D%2018.0.0-blue.svg?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![Express Framework](https://img.shields.io/badge/Express-4.18.3-lightgrey.svg?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com)
-[![Stateless Architecture](https://img.shields.io/badge/Architecture-100%25%20Stateless-brightgreen.svg?style=for-the-badge)](https://en.wikipedia.org/wiki/Stateless_protocol)
+[![PG Auto-Check](https://img.shields.io/badge/Mode-PG%20Auto--Check-brightgreen.svg?style=for-the-badge)](docs/AUTO-CHECK-PG.md)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg?style=for-the-badge)](https://en.wikipedia.org/wiki/Proprietary_software)
 
+> **Fork of** [ahmadzakiyox/shoppepay-api-gateway](https://github.com/ahmadzakiyox/shoppepay-api-gateway)  
+> **Maintainer fork:** [fadheelahmadalfaiz/shoppepay-api-gateway](https://github.com/fadheelahmadalfaiz/shoppepay-api-gateway)
 
-> **Fork note (auto-check PG):** entrypoint `server.js` sekarang mode **Payment Gateway auto-check**.
-> Core obfuscated dipindah ke `core-gateway.js`. Endpoint baru: `POST /payments/create`, `GET /payments/:id`, webhook, auto-poll.
-> Dokumentasi lengkap: [`docs/AUTO-CHECK-PG.md`](docs/AUTO-CHECK-PG.md). Endpoint lama (`/create-qris`, `/check-payment`, …) tetap tersedia via proxy.
+Unofficial ShopeePay Partner gateway dengan **layer Payment Gateway (PG) auto-check**:
+buat payment → tampilkan QR → **server auto-poll** mutasi → mark `paid` → optional **webhook** ke web app + notifikasi Telegram.
 
-API Gateway berkinerja tinggi, ringan, dan **100% Stateless (tanpa database & tanpa background polling cron)** untuk otomatisasi verifikasi mutasi transaksi ShopeePay Partner, validasi token, penarikan riwayat bulanan, serta pembuatan dynamic QRIS EMVCo secara instan.
+### Docs fokus
+- [`docs/AUTO-CHECK-PG.md`](docs/AUTO-CHECK-PG.md) — cara pakai PG layer
+- [`docs/WEBAPP-INTEGRATION.md`](docs/WEBAPP-INTEGRATION.md) — integrasi web app (create / webhook / status)
+- [`docs/AI-INTEGRATION-SPEC.md`](docs/AI-INTEGRATION-SPEC.md) — handoff lengkap untuk AI (opsional)
 
 ---
 
@@ -21,427 +25,387 @@ API Gateway berkinerja tinggi, ringan, dan **100% Stateless (tanpa database & ta
 >
 > Gateway ini bekerja dengan cara membaca data dari **ShopeePay Partner Portal** secara teknis menggunakan sesi akun merchant Anda sendiri (token internal), serupa dengan cara kerja extension browser atau skrip otomasi pihak ketiga.
 >
-> **Kenapa Aman Digunakan?**
-> *   ✅ **Tidak ada credential yang keluar**: Token & API Key Anda disimpan di berkas `.env` di server Anda sendiri dan **tidak pernah dikirim ke pihak lain manapun** selain ke server resmi ShopeePay Partner.
-> *   ✅ **Read-Only & Non-Destruktif**: Gateway ini **hanya membaca** data mutasi dan tidak melakukan operasi yang mengubah saldo, menarik dana, atau memodifikasi akun Anda.
-> *   ✅ **Zero Third-Party**: Tidak ada layanan cloud pihak ketiga, webhook publik, atau proxy eksternal yang terlibat. Semua lalu lintas data berjalan langsung dari server Anda ke `shopeepay.shopee.co.id`.
->
-> **Penggunaan sepenuhnya menjadi tanggung jawab pengguna.** Pastikan Anda memahami Syarat & Ketentuan ShopeePay Partner yang berlaku di negara Anda sebelum menggunakannya di lingkungan produksi komersial.
+> **Penggunaan sepenuhnya menjadi tanggung jawab pengguna.** Pastikan Anda memahami Syarat & Ketentuan ShopeePay Partner yang berlaku sebelum memakai di produksi.
 
 ---
 
-## 🧭 Diagram Alur Pengecekan Stateless (Client-Polled)
+## ✨ Apa yang berubah di fork ini?
 
-Arsitektur ini didesain agar sangat aman dari deteksi pemblokiran (*rate-limit*) Shopee, karena gateway hanya memanggil API ShopeePay secara pasif saat dipicu oleh halaman checkout aktif di website Toko Anda.
+| Upstream (asli) | Fork ini (PG auto-check) |
+|---|---|
+| Client harus poll `POST /check-payment` | Server **auto-poll** pending payments |
+| Tidak ada session payment | Ada `payment_id` session + persist file |
+| Tidak ada webhook | Optional `webhook_url` → event `payment.paid` |
+| `server.js` = core obfuscated | Core dipindah ke `core-gateway.js` |
+| Entry = core saja | Entry `server.js` spawn core + expose PG API |
+| Amount collision manual | `UNIQUE_AMOUNT=true` → `base + 1..99` otomatis |
+
+### Arsitektur singkat
+
+```text
+Public PORT (server.js)
+  ├── /payments/*          session + auto-check + webhook
+  └── proxy → CORE_PORT    core-gateway.js (obfuscated)
+                 └── ShopeePay Partner API
+```
+
+Endpoint lama (`/create-qris`, `/check-payment`, `/transactions`, …) **tetap hidup** via proxy.
+
+---
+
+## 🧭 Alur PG Auto-Check (disarankan untuk web app)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Pelanggan
-    participant Toko as Toko Utama (Website/App)
-    participant Gateway as ShopeePay Gateway API
-    participant Shopee as ShopeePay Partner Server
+    actor User
+    participant Web as Web App / Toko
+    participant GW as Gateway (PG mode)
+    participant Shopee as ShopeePay Partner
 
-    Toko->>Gateway: POST /create-qris { amount } (Auth: X-API-Key)
-    Note over Gateway: Membaca QRIS_STATIC & menyuntikkan nominal baru<br/>Menghitung ulang CRC16-CCITT secara in-memory
-    Gateway-->>Toko: Mengembalikan URL QR Redirect & data Expiry
-    Toko->>Pelanggan: Menampilkan halaman pembayaran & QR Code
-    Pelanggan->>Shopee: Memindai QR & menyelesaikan pembayaran di HP
-
-    loop Tiap 10-15 Detik (Hanya selama checkout aktif)
-        Toko->>Gateway: POST /check-payment { amount, startTime } (Auth: X-API-Key)
-        Gateway->>Shopee: POST /get-transaction-list (Rentang: startTime s/d Sekarang)
-        Shopee-->>Gateway: Mengembalikan List Transaksi Masuk
-        alt Transaksi Ditemukan (Paid)
-            Gateway->>Shopee: POST /get-transaction-detail (Mengambil Nama Pengirim)
-            Shopee-->>Gateway: Mengembalikan Detail Pembayaran (OVO, DANA, BCA, dll)
-            Gateway-->>Toko: Mengembalikan status: {"paid": true, "transaction": { ... }}
-            Note over Toko: Tandai invoice LUNAS di database Toko Utama
-        else Transaksi Belum Ada (Unpaid)
-            Gateway-->>Toko: Mengembalikan status: {"paid": false}
-        end
+    Web->>GW: POST /payments/create
+    Note over Web,GW: amount, external_id, webhook_url
+    GW->>GW: unique amount + create session
+    GW->>Shopee: generate dynamic QRIS (via core)
+    GW-->>Web: payment_id, charged amount, qris_url
+    Web->>User: tampilkan QR
+    User->>Shopee: bayar sesuai charged amount
+    loop Auto-check tiap 10 dtk (server-side)
+        GW->>Shopee: cek mutasi
     end
+    GW-->>Web: POST webhook payment.paid
+    Note over Web: mark order LUNAS + simpan transactionId
+```
+
+Kalau webhook tidak di-set, web app bisa poll: `GET /payments/:id?refresh=1`.
+
+---
+
+## 🎯 Fitur
+
+### PG layer (baru)
+- **`POST /payments/create`** — create payment + QR + mulai auto-check
+- **Auto-poll server-side** — default tiap 10 detik, max ~20 menit
+- **Webhook `payment.paid`** — POST ke URL web app (retry 3x)
+- **Telegram notify** saat lunas (opsional)
+- **Unique amount** otomatis (`UNIQUE_AMOUNT=true`)
+- **Anti double-claim `transactionId`** (file persist)
+- **Session persist** di `PAYMENT_STORE_PATH` (default `./data/payments.json`)
+- **Rewrite `qris_url`** ke host publik (bukan `127.0.0.1:CORE_PORT`)
+
+### Core (tetap ada)
+- Dynamic QRIS EMVCo injector (Tag `54` + CRC16)
+- Token validator + alert Telegram jika token mati
+- Mutasi terbaru / sebulan
+- Multi-merchant header `X-Shopee-Token`
+- Legacy client-polled `/check-payment`
+
+---
+
+## 📁 Struktur penting
+
+```text
+server.js                 # entry PG (npm start)
+core-gateway.js           # core obfuscated (internal CORE_PORT)
+lib/payment-store.js      # session store + claim map
+lib/auto-checker.js       # poller + webhook + telegram paid
+routes/payments.js        # /payments/*
+docs/AUTO-CHECK-PG.md
+docs/WEBAPP-INTEGRATION.md
+docs/AI-INTEGRATION-SPEC.md
+.env.example
 ```
 
 ---
 
-## 🎯 Fitur Utama & Keunggulan
+## 📋 Cara mengambil `SHOPEE_TOKEN`
 
-*   **Zero-Database (100% Stateless)**: Tidak memerlukan penyimpanan lokal (SQLite/PostgreSQL) sehingga kebal terhadap kehilangan data akibat restart berkala di cloud serverless gratis (Render, Vercel, Railway).
-*   **Dynamic QRIS EMVCo Injector**: Melakukan parsing TLV (*Tag-Length-Value*) pada QRIS statis Anda, menyuntikkan nominal tagihan (Tag `54`), dan menghitung ulang standard check-sum **CRC16-CCITT** secara in-memory.
-*   **Smart API Polling (Anti-Block)**: Aktivitas penembakan API ke ShopeePay mengikuti jumlah pembeli yang sedang aktif di checkout. Saat toko sepi/malam hari, jumlah request adalah nol (0), menjaga token tetap aman dari *rate-limiting*.
-*   **Dynamic Multi-Token (Multi-Store Routing)**: Mendukung pengelolaan multi-akun/merchant. Anda dapat mengirimkan token Shopee yang berbeda via header HTTP `X-Shopee-Token` di setiap request.
-*   **Automatic Issuer Resolution**: Melakukan query data sekunder untuk mendeteksi metode/aplikasi pembayaran asal pengirim (seperti Seabank, OVO, DANA, BCA, Bank Mandiri, dll).
-*   **Live Token Validator & Alert Telegram**: Melakukan uji coba token setiap 5 menit. Jika terdeteksi mati atau dikeluarkan (*force logout*), notifikasi diagnostik detail akan dikirim langsung ke Bot Telegram Anda.
-*   **In-Memory Transaction Deduplication (Anti-Double Claim)**: Mengamankan verifikasi nominal kembar secara stateless. Gateway secara otomatis mencatat `transactionId` yang sukses diklaim ke dalam RAM (dibersihkan otomatis setiap 24 jam) untuk mencegah manipulasi klaim ganda.
-*   **In-Memory Circular Logs**: Menyimpan 100 log aktivitas terakhir di RAM server untuk pemantauan operasional yang mudah diakses via endpoint terproteksi `/api/logs`.
+1. Login ke [ShopeePay Partner Portal](https://partner.shopee.co.id/).
+2. Buka **Developer Tools** (`F12`) → tab **Network**.
+3. Filter **Fetch/XHR**, refresh halaman transaksi.
+4. Cari request `get-transaction-list`.
+5. Request payload → `data.metadata.token`.
+6. Salin token (biasanya diawali `B:`) ke env `SHOPEE_TOKEN`.
 
 ---
 
-## 🛡️ Penanganan Kolisi Nominal Kembar (Payment Collisions)
+## 🧾 Cara mengambil `QRIS_STATIC`
 
-Karena API ini bersifat *Stateless* (tanpa database permanen), jika ada dua pelanggan berbeda melakukan checkout dengan nominal yang sama persis (misalnya Rp 50.000) pada waktu bersamaan, sistem rawan mengalami *double claim* (satu bukti bayar diklaim oleh dua orang berbeda).
+1. Ambil **QRIS statis** merchant ShopeePay (portal partner / print toko).
+2. Decode QR menjadi **raw EMV string** (biasanya mulai `000201...`).
+3. Tempel 1 baris penuh ke env `QRIS_STATIC`.
 
-Untuk mencegah hal tersebut, sistem ini didesain menggunakan pengaman ganda:
-
-1.  **Deduplikasi di Sisi API Gateway (In-Memory Tracking)**:
-    API Gateway secara dinamis menyimpan `transactionId` yang sukses divalidasi ke dalam memori *Map* server (RAM). Jika ada transaksi verifikasi masuk menggunakan nomor resi yang sudah pernah terpakai dalam 24 jam terakhir, gateway akan otomatis mengabaikannya (`paid: false`).
-2.  **Rekomendasi di Sisi Aplikasi Toko Utama**:
-    *   **Gunakan Kode Unik**: Tambahkan kode unik (Rp 1 s/d Rp 99) pada nominal tagihan yang dihasilkan oleh aplikasi Anda saat membuat QRIS.
-    *   **Deduplikasi Database Toko**: Simpan data `transactionId` yang dikembalikan oleh respon sukses `/check-payment` ke database aplikasi Anda. Pastikan sistem Anda menolak proses kelunasan jika `transactionId` tersebut sudah pernah terdaftar di database Anda sebelumnya.
-
----
-
-## 📋 Cara Mengambil `SHOPEE_TOKEN`
-
-Untuk mendapatkan token internal ShopeePay (`SHOPEE_TOKEN`):
-1.  Buka browser Anda dan login ke [ShopeePay Partner Portal](https://partner.shopee.co.id/).
-2.  Buka **Developer Tools** (tekan `F12` atau `Ctrl+Shift+I`) lalu arahkan ke tab **Network**.
-3.  Pilih filter **Fetch/XHR** dan lakukan refresh halaman transaksi.
-4.  Cari request bernama `get-transaction-list`.
-5.  Lihat bagian **Request Payload (JSON Body)** -> **data** -> **metadata** -> **token**.
-6.  Salin nilai token tersebut (biasanya diawali dengan `B:`). Karakter inilah yang digunakan sebagai `SHOPEE_TOKEN`.
+| Env | Fungsi |
+|---|---|
+| `SHOPEE_TOKEN` | baca mutasi / status bayar |
+| `QRIS_STATIC` | template generate QR dinamis |
 
 ---
 
-## 🛠️ Konfigurasi Environment (`.env`)
-
-Buat berkas `.env` di direktori utama Anda:
+## 🛠️ Environment (`.env`)
 
 ```env
-# Token default ShopeePay Merchant (Dimulai dengan 'B:')
-SHOPEE_TOKEN="B:EWznmVDI//rF3y6Pt0XB3C3sQoKdsA3yxfPmGBHyUE..."
+# === Core ===
+SHOPEE_TOKEN=B:your_inner_shopeepay_token_here
+API_KEY=your_x_api_key_here
+PORT=4000
+CORE_PORT=4001
 
-# Kunci rahasia untuk memproteksi API Gateway Anda sendiri
-API_KEY="shopee-secret-key-2026"
+# Telegram (token mati + notif paid)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_telegram_chat_id_here
 
-# Port server berjalan
-PORT=3001
+# QRIS static payload (EMVCo)
+QRIS_STATIC=00020101021126610016ID.CO.SHOPEE.WWW0118...
 
-# Notifikasi peringatan (Telegram Alerts)
-TELEGRAM_BOT_TOKEN="8831336691:AAGoLvhhhy3gEq..."
-TELEGRAM_CHAT_ID="1265481161"
-
-# QRIS Statis Merchant Anda (untuk pembuatan QRIS dinamis)
-QRIS_STATIC="00020101021126610016ID.CO.SHOPEE.WWW0118..."
+# === PG auto-check ===
+AUTO_CHECK_INTERVAL_MS=10000
+AUTO_CHECK_MAX_POLLS=120
+UNIQUE_AMOUNT=true
+PAYMENT_STORE_PATH=./data/payments.json
 ```
 
----
+| Key | Default | Keterangan |
+|---|---|---|
+| `CORE_PORT` | `4001` | port internal core |
+| `AUTO_CHECK_INTERVAL_MS` | `10000` | interval auto-poll |
+| `AUTO_CHECK_MAX_POLLS` | `120` | max poll / payment |
+| `UNIQUE_AMOUNT` | `true` | tambah +1..99 anti tabrakan |
+| `PAYMENT_STORE_PATH` | `./data/payments.json` | persist session |
 
-## 📑 Referensi API Lengkap
+> **Webhook URL tidak di-set di env gateway.**  
+> Web app mengirim `webhook_url` **per request** ke `POST /payments/create`.
 
-Semua endpoint sensitif mewajibkan pengiriman API Key di header `X-API-Key: <API_KEY_KAMU>` atau query string `?api_key=<API_KEY_KAMU>`.
-
-### 1. Status Kesehatan Server
-*   **Endpoint**: `/api/health`
-*   **Method**: `GET`
-*   **Auth**: Tidak Butuh
-*   **Response (200 OK)**:
-    ```json
-    {
-      "success": true,
-      "message": "ShopeePay API Service is running",
-      "timestamp": "2026-07-15T02:14:10.091Z"
-    }
-    ```
+Contoh webhook web app:
+`https://fh-event.lovable.app/api/public/shopeepay-webhook`
 
 ---
 
-### 2. Generate Dynamic QRIS
-*   **Endpoint**: `/create-qris`
-*   **Method**: `POST`
-*   **Headers**:
-    ```http
-    Content-Type: application/json
-    X-API-Key: shopee-secret-key-2026
-    ```
-*   **Request Body**:
-    ```json
-    {
-      "amount": 15000
-    }
-    ```
-*   **Response (200 OK)**:
-    ```json
-    {
-      "success": true,
-      "data": {
-        "qris_url": "http://localhost:3001/qr/f3f050d4",
-        "amount": 15000,
-        "expires_at": "2026-07-15 09:29:25",
-        "expires_in": "15 menit"
-      }
-    }
-    ```
+## 📑 Referensi API
 
----
-
-### 3. Tampilkan QR Code Image (Redirect)
-*   **Endpoint**: `/qr/:id`
-*   **Method**: `GET`
-*   **Auth**: Tidak Butuh (Akses Publik untuk Pelanggan)
-
----
-
-### 4. Cek Validitas Token Saat Ini
-*   **Endpoint**: `/token-status`
-*   **Method**: `GET`
-*   **Response (200 OK - Valid)**:
-    ```json
-    {
-      "success": true,
-      "data": {
-        "token_status": "valid",
-        "message": "Token is working"
-      }
-    }
-    ```
-
----
-
-### 5. Verifikasi Pembayaran Instan (Stateless)
-*   **Endpoint**: `/check-payment`
-*   **Method**: `POST`
-*   **Headers**:
-    ```http
-    Content-Type: application/json
-    X-API-Key: shopee-secret-key-2026
-    X-Shopee-Token: B:custom_token_here (Opsional, untuk multi-store)
-    ```
-*   **Request Body**:
-    ```json
-    {
-      "amount": 1008,
-      "startTime": 1784050000
-    }
-    ```
-*   **Response (200 OK - Terbayar)**:
-    ```json
-    {
-      "success": true,
-      "paid": true,
-      "transaction": {
-        "transactionId": "264693445089687719",
-        "amount": 1008,
-        "status": "success",
-        "time": "2026-07-15 00:42:21",
-        "issuer": "Seabank"
-      }
-    }
-    ```
-
----
-
-### 6. Mutasi Transaksi Terbaru
-*   **Endpoint**: `/transactions`
-*   **Method**: `GET`
-*   **Response (200 OK)**:
-    ```json
-    {
-      "success": true,
-      "total_amount": "409.662",
-      "data": {
-        "transactions": [
-          {
-            "amount": 9600,
-            "status": "success",
-            "time": "2026-07-13 14:12:41",
-            "issuer": "OVO"
-          }
-        ]
-      }
-    }
-    ```
-
----
-
-### 7. Mutasi Transaksi Sebulan Penuh
-*   **Endpoint**: `/transactions/all`
-*   **Method**: `GET`
-
----
-
-### 8. Perbarui Token Live
-*   **Endpoint**: `/update-token`
-*   **Method**: `POST`
-
----
-
-### 9. Log Gateway (In-Memory)
-*   **Endpoint**: `/api/logs`
-*   **Method**: `GET`
-
----
-
-## 💻 Contoh Integrasi Kode (Klien)
-
-### PHP (Laravel / Native)
-```php
-<?php
-// Silakan rujuk ke bagian integrasi PHP di atas untuk contoh verifikasi pembayaran lengkap.
+Auth (hampir semua endpoint):
+```http
+X-API-Key: <API_KEY>
 ```
 
+### A) PG Auto-Check — utama untuk web app
+
+#### 1. Health
+```http
+GET /api/health
+```
+Harus ada `"mode": "pg-auto-check"` jika entrypoint benar.
+
+#### 2. Create payment
+```http
+POST /payments/create
+Content-Type: application/json
+X-API-Key: <API_KEY>
+```
+
+```json
+{
+  "amount": 15000,
+  "external_id": "ORDER-123",
+  "webhook_url": "https://fh-event.lovable.app/api/public/shopeepay-webhook",
+  "metadata": { "order_id": "ORDER-123" }
+}
+```
+
+Response penting:
+- `payment_id`
+- `amount` → **charged amount** (bisa `base + suffix`)
+- `base_amount`
+- `qris_url`
+- `auto_check: true`
+
+#### 3. Status payment
+```http
+GET /payments/:id
+GET /payments/:id?refresh=1
+```
+
+Status: `pending` | `paid` | `expired` | `cancelled`
+
+#### 4. Force check / cancel / list
+```http
+POST /payments/:id/check
+POST /payments/:id/cancel
+GET  /payments?status=pending&limit=20
+```
+
+#### 5. Webhook payload (saat lunas)
+Gateway `POST` ke `webhook_url` yang dikirim saat create:
+
+```json
+{
+  "event": "payment.paid",
+  "payment_id": "pay_...",
+  "external_id": "ORDER-123",
+  "amount": 15047,
+  "status": "paid",
+  "transaction": {
+    "transactionId": "...",
+    "amount": 15047,
+    "status": "success",
+    "time": "2026-07-18 19:23:29",
+    "issuer": "Gopay"
+  },
+  "metadata": {},
+  "paid_at": "2026-07-18T12:24:01.000Z"
+}
+```
+
+Web app wajib:
+1. idempotent (order sudah paid → 200)
+2. unique `transactionId`
+3. mark order paid hanya dari event ini / status `paid`
+
 ---
 
-## 🚀 Panduan Deployment Detail (Production)
+### B) Legacy core routes (tetap tersedia)
 
-Karena sistem ini **100% Stateless**, proses deploy menjadi sangat cepat dan stabil. Berikut adalah panduan langkah-demi-langkah mendetail untuk berbagai platform target:
+```http
+POST /create-qris          { "amount": 15000 }
+POST /check-payment        { "amount": 15000, "startTime": 1710000000 }
+GET  /qr/:id
+GET  /token-status
+GET  /transactions
+GET  /transactions/all
+POST /update-token         { "token": "B:..." }
+GET  /api/logs
+```
+
+`startTime` pada `/check-payment` = unix **seconds**.  
+Multi-merchant opsional: header `X-Shopee-Token: B:...`
 
 ---
 
-### 🎛️ Opsi A: Deployment di VPS (Ubuntu / Debian)
+## 💻 Contoh integrasi web app (ringkas)
 
-Menggunakan VPS (seperti DigitalOcean, Linode, Biznet, IDCloudHost) adalah cara paling direkomendasikan untuk produksi komersial. Kita akan menggunakan **PM2** sebagai Process Manager agar server otomatis menyala kembali jika crash atau server VPS di-reboot.
+```js
+// 1) create payment
+const created = await fetch(`${process.env.SHOPEEPAY_BASE_URL}/payments/create`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': process.env.SHOPEEPAY_API_KEY,
+  },
+  body: JSON.stringify({
+    amount: order.total,
+    external_id: order.id,
+    webhook_url: process.env.SHOPEEPAY_WEBHOOK_URL,
+    // contoh: https://fh-event.lovable.app/api/public/shopeepay-webhook
+    metadata: { order_id: order.id },
+  }),
+}).then((r) => r.json());
 
-#### Langkah 1: Persiapan Awal
-Pastikan Anda sudah menginstal **Node.js** dan **NPM** di VPS Anda. Jika belum:
+// simpan: payment_id, amount (charged), qris_url
+// tampilkan qris_url ke user
+
+// 2) webhook di web app:
+// POST /api/public/shopeepay-webhook
+// if event == payment.paid → mark order paid (unique transactionId)
+```
+
+Detail: [`docs/WEBAPP-INTEGRATION.md`](docs/WEBAPP-INTEGRATION.md)
+
+---
+
+## 🛡️ Penanganan kolisi nominal
+
+Upstream memakai dedup `transactionId` di RAM + rekomendasi unique amount di sisi toko.
+
+Di fork ini ditambah:
+1. **`UNIQUE_AMOUNT=true`** → charged amount = `base + 1..99` otomatis
+2. **Claim store file** untuk `transactionId` (lebih tahan restart daripada RAM saja)
+3. **Rekomendasi tetap**: web app juga unique-index `transactionId`
+
+---
+
+## 🚀 Deployment
+
+### Start command (penting)
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
+npm start
+# = node server.js   (bukan node core-gateway.js)
 ```
 
-#### Langkah 2: Clone & Install Proyek
-1. Unggah berkas proyek Anda ke VPS (via Git atau SFTP) ke direktori `/var/www/shoppepay-gateway`.
-2. Masuk ke folder proyek dan instal dependensi:
-   ```bash
-   cd /var/www/shoppepay-gateway
-   npm install --production
-   ```
-3. Buat berkas `.env` dan konfigurasikan token serta API Key Anda:
-   ```bash
-   nano .env
-   ```
+### Build command
+`npm run build` sekarang **no-op** (core sudah prebuilt di `core-gateway.js`).  
+Jangan kembalikan script obfuscator ke `build` — Nixpacks/EasyPanel akan gagal (`javascript-obfuscator: not found`).
 
-#### Langkah 3: Menjalankan Menggunakan PM2
-1. Instal PM2 secara global di VPS:
-   ```bash
-   sudo npm install -g pm2
-   ```
-2. Jalankan server menggunakan PM2:
-   ```bash
-   pm2 start server.js --name "shoppepay-gateway"
-   ```
-3. Konfigurasikan PM2 agar otomatis berjalan saat VPS dinyalakan ulang (reboot):
-   ```bash
-   pm2 startup
-   ```
-   *(Salin dan jalankan perintah yang muncul di terminal Anda untuk menyelesaikan pendaftaran).*
-4. Simpan konfigurasi PM2 saat ini:
-   ```bash
-   pm2 save
-   ```
+### EasyPanel / Nixpacks
+1. Builder: **Nixpacks** (atau Railpack)
+2. Install: kosong (auto)
+3. Build: kosong / no-op
+4. Start: **`npm start`**
+5. Isi env dari tabel di atas
+6. Cek `GET /api/health` → `mode: pg-auto-check`
 
-#### Langkah 4: Setup Nginx Reverse Proxy & SSL (HTTPS)
-Agar gateway dapat diakses menggunakan HTTPS (contoh: `https://api.tokoanda.com`), kita gunakan Nginx sebagai reverse proxy.
+### VPS + PM2
+```bash
+git clone https://github.com/fadheelahmadalfaiz/shoppepay-api-gateway.git
+cd shoppepay-api-gateway
+npm install --omit=dev
+cp .env.example .env   # lalu edit secret
+mkdir -p data
+pm2 start server.js --name shoppepay-gateway
+pm2 save
+```
 
-1. Instal Nginx:
-   ```bash
-   sudo apt install nginx -y
-   ```
-2. Buat konfigurasi block server baru:
-   ```bash
-   sudo nano /etc/nginx/sites-available/shoppepay-gateway
-   ```
-   Masukkan konfigurasi berikut:
-   ```nginx
-   server {
-       listen 80;
-       server_name api.tokoanda.com; # Ganti dengan domain Anda
-
-       location / {
-           proxy_pass http://localhost:3001; # Port aplikasi Node.js Anda
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-           proxy_cache_bypass $http_upgrade;
-       }
-   }
-   ```
-3. Aktifkan konfigurasi dan restart Nginx:
-   ```bash
-   sudo ln -s /etc/nginx/sites-available/shoppepay-gateway /etc/nginx/sites-enabled/
-   sudo systemctl restart nginx
-   ```
-4. Pasang SSL Gratis menggunakan Certbot (Let's Encrypt):
-   ```bash
-   sudo apt install certbot python3-certbot-nginx -y
-   ```
-   Jalankan certbot untuk domain Anda:
-   ```bash
-   sudo certbot --nginx -d api.tokoanda.com
-   ```
-   *(Ikuti instruksi di layar, pilih opsi untuk mengarahkan ulang semua trafik HTTP ke HTTPS).*
+Atau pakai `./deploy.sh` (sudah mengarah ke fork ini).
 
 ---
 
-### 🚀 Opsi B: Deployment di Render.com (Gratis & Mudah)
+## 🧪 Smoke test
 
-Render sangat cocok jika Anda tidak ingin pusing mengelola server VPS sendiri.
+```bash
+BASE=https://your-host
+KEY=your_api_key
 
-1. **Upload ke GitHub**: Buat repository GitHub pribadi (Private) dan unggah semua file proyek Anda ke sana (kecuali folder `node_modules` dan berkas `.env`).
-2. **Buat Web Service**:
-   - Masuk ke dashboard [Render.com](https://render.com/).
-   - Klik **New +** -> **Web Service**.
-   - Hubungkan akun GitHub Anda dan pilih repository proyek `shoppepay-system`.
-3. **Konfigurasi Build & Run**:
-   - **Name**: `shoppepay-api-gateway`
-   - **Environment/Runtime**: `Node`
-   - **Build Command**: `npm install`
-   - **Start Command**: `node server.js`
-4. **Environment Variables**:
-   Klik tab **Environment** pada konfigurasi Render, lalu tambahkan variabel kunci berikut:
-   - `SHOPEE_TOKEN` = *(Token ShopeePay Anda)*
-   - `API_KEY` = *(API Key pilihan Anda untuk mengamankan gateway)*
-   - `PORT` = `3001`
-   - `TELEGRAM_BOT_TOKEN` = *(Opsional, Token Bot)*
-   - `TELEGRAM_CHAT_ID` = *(Opsional, Chat ID)*
-   - `QRIS_STATIC` = *(QRIS Statis toko Anda)*
-5. **Deploy**: Klik **Create Web Service**. Render akan mem-build dan menyalakan gateway Anda secara otomatis. Anda akan mendapatkan URL HTTPS gratis (contoh: `https://shoppepay-api-gateway.onrender.com`).
+curl -sS "$BASE/api/health" | jq .mode
+# expect: "pg-auto-check"
+
+curl -sS -X POST "$BASE/payments/create" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $KEY" \
+  -d '{"amount":1000,"external_id":"TEST-1","webhook_url":"https://fh-event.lovable.app/api/public/shopeepay-webhook"}' | jq
+```
 
 ---
 
-### 🛤️ Opsi C: Deployment di Railway.app
+## ⚡ Error umum
 
-Railway adalah opsi PaaS berbayar sangat murah/berkualitas tinggi yang mendukung deploy instan dari GitHub.
-
-1. Masuk ke [Railway.app](https://railway.app/) dan buat akun.
-2. Klik **New Project** -> **Deploy from GitHub repo** -> Pilih repo proyek Anda.
-3. Masuk ke setelan layanan di Railway, pilih tab **Variables**, lalu tambahkan semua variabel lingkungan Anda sesuai berkas `.env`.
-4. Railway secara otomatis mendeteksi berkas `package.json` dan menjalankan perintah `npm start`.
-5. Buka tab **Settings** -> Klik **Generate Domain** di bagian Networking untuk mendapatkan URL HTTPS publik.
-
----
-
-### 📦 Opsi D: Deployment Menggunakan File Precompiled Binary (Tanpa Node.js)
-
-Jika Anda ingin mendeploy di server produksi tanpa menginstal Node.js sama sekali, Anda bisa menggunakan berkas binary yang sudah dikompilasi sebelumnya (`server-linux` atau `server-win.exe`).
-
-#### Menjalankan di Linux VPS (Ubuntu/CentOS):
-1. Unggah berkas `server-linux` dan berkas `.env` ke folder yang sama di server VPS Anda.
-2. Berikan izin eksekusi pada berkas binary tersebut:
-   ```bash
-   chmod +x server-linux
-   ```
-3. Jalankan aplikasi di background menggunakan `nohup` atau buat berkas systemd service:
-   ```bash
-   nohup ./server-linux > output.log 2>&1 &
-   ```
-   Aplikasi Anda sekarang berjalan dan log sistem akan dicatat ke dalam `output.log`.
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `401 Unauthorized` | API key salah/kosong | cek header `X-API-Key` |
+| `200020` / token invalid | sesi partner mati | `POST /update-token` dengan token baru |
+| Deploy `javascript-obfuscator: not found` | Nixpacks jalanin old `npm run build` | pakai build no-op / kosongkan build command |
+| Health tanpa `pg-auto-check` | start core saja / image lama | `npm start` + redeploy `main` |
+| Webhook `order not found` | `external_id` tidak ada di web app | kirim order id valid saat create |
+| QR URL `127.0.0.1` | versi lama / host header hilang | pakai fork terbaru (rewrite host) |
+| Selalu unpaid | amount mismatch / token invalid / expired | pakai **charged amount**, cek `/token-status` |
 
 ---
 
-## ⚡ Pemetaan Response & Penanganan Error
+## 📚 Dokumentasi tambahan
 
-| Kode Status / Error | Keterangan | Solusi |
-| :--- | :--- | :--- |
-| `200 OK` | Permintaan sukses diproses | Baca properti data response. |
-| `401 Unauthorized` | API Key tidak valid / kosong | Pastikan header `X-API-Key` atau query string `api_key` diisi dengan benar. |
-| `400 Bad Request` | Parameter input salah / tidak lengkap | Cek kembali JSON body atau parameter URL yang dikirimkan. |
-| `200020` (Shopee Code) | Token invalid / mati | Jalankan `POST /update-token` dengan token baru yang ditarik dari browser. |
-| `EADDRINUSE` | Port server bentrok | Port 3001 sudah digunakan oleh proses Node lain. Matikan proses tersebut terlebih dahulu. |
+| File | Isi |
+|---|---|
+| [docs/AUTO-CHECK-PG.md](docs/AUTO-CHECK-PG.md) | Detail PG layer |
+| [docs/WEBAPP-INTEGRATION.md](docs/WEBAPP-INTEGRATION.md) | Fokus koneksi web app |
+| [docs/AI-INTEGRATION-SPEC.md](docs/AI-INTEGRATION-SPEC.md) | Spec panjang untuk AI handoff |
 
 ---
 
 ## 🔒 Lisensi
+
 Proyek ini menggunakan lisensi **Proprietary (Komersial)**. Hak cipta dilindungi undang-undang. Dilarang keras menyebarluaskan, membongkar berkas biner (*reverse engineering*), mendekompilasi, atau memperjualbelikan kembali kode sumber/aplikasi ini tanpa izin tertulis dari pemilik hak cipta resmi.
+
+---
+
+## 🙏 Credit
+
+- Upstream core: [ahmadzakiyox/shoppepay-api-gateway](https://github.com/ahmadzakiyox/shoppepay-api-gateway)
+- Fork PG auto-check layer: session store, auto-poller, webhook, unique amount, docs
