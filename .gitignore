@@ -5,6 +5,10 @@ shoppepay.db-journal
 *.log
 .DS_Store
 server-*
+!server.js
 *.exe
 gateway*
 zakigithub.md
+data/
+data/*.json
+data/*.tmp

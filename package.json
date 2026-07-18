@@ -1,12 +1,13 @@
 {
   "name": "shoppepay-merchant-system",
-  "version": "2.0.0",
-  "description": "ShopeePay Payment Check System with Admin Dashboard",
+  "version": "2.1.0",
+  "description": "ShopeePay Payment Gateway with auto-check (PG mode) on top of stateless core",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server-raw.js",
-    "build": "javascript-obfuscator server-raw.js --output server.js --self-defending true --control-flow-flattening true --dead-code-injection true --string-array-encoding rc4"
+    "start:core": "node core-gateway.js",
+    "dev": "nodemon server.js",
+    "build": "javascript-obfuscator server-raw.js --output core-gateway.js --self-defending true --control-flow-flattening true --dead-code-injection true --string-array-encoding rc4"
   },
   "dependencies": {
     "axios": "^1.7.2",

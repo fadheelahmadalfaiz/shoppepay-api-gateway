@@ -34,7 +34,7 @@ else
     echo "Cloning repository to $TARGET_DIR..."
     sudo mkdir -p /var/www
     sudo chown -R $USER:$USER /var/www
-    git clone https://github.com/ahmadzakiyox/shoppepay-api-gateway.git $TARGET_DIR
+    git clone https://github.com/fadheelahmadalfaiz/shoppepay-api-gateway.git $TARGET_DIR
     cd $TARGET_DIR
 fi
 
@@ -49,11 +49,14 @@ if [ ! -f ".env" ]; then
     echo "Please configure your .env file in $TARGET_DIR/.env later."
 fi
 
-# 5. Run under PM2
+mkdir -p data
+
+# 5. Run under PM2 (server.js = PG auto-check entrypoint; core spawns on CORE_PORT)
 echo "Starting app under PM2..."
 pm2 restart shoppepay-gateway || pm2 start server.js --name "shoppepay-gateway"
 pm2 save
 
 echo "======= DEPLOYMENT COMPLETED ======="
-echo "Gateway is running on port 3001 (or your custom PORT in .env)."
-echo "Log can be viewed using: pm2 logs shoppepay-gateway"
+echo "Public PG port: PORT in .env (default 4000). Core internal: CORE_PORT (default 4001)."
+echo "Docs: docs/AUTO-CHECK-PG.md"
+echo "Log: pm2 logs shoppepay-gateway"

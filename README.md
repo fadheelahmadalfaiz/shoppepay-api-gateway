@@ -5,6 +5,11 @@
 [![Stateless Architecture](https://img.shields.io/badge/Architecture-100%25%20Stateless-brightgreen.svg?style=for-the-badge)](https://en.wikipedia.org/wiki/Stateless_protocol)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg?style=for-the-badge)](https://en.wikipedia.org/wiki/Proprietary_software)
 
+
+> **Fork note (auto-check PG):** entrypoint `server.js` sekarang mode **Payment Gateway auto-check**.
+> Core obfuscated dipindah ke `core-gateway.js`. Endpoint baru: `POST /payments/create`, `GET /payments/:id`, webhook, auto-poll.
+> Dokumentasi lengkap: [`docs/AUTO-CHECK-PG.md`](docs/AUTO-CHECK-PG.md). Endpoint lama (`/create-qris`, `/check-payment`, …) tetap tersedia via proxy.
+
 API Gateway berkinerja tinggi, ringan, dan **100% Stateless (tanpa database & tanpa background polling cron)** untuk otomatisasi verifikasi mutasi transaksi ShopeePay Partner, validasi token, penarikan riwayat bulanan, serta pembuatan dynamic QRIS EMVCo secara instan.
 
 ---
