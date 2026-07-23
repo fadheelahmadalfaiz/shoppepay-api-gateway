@@ -15,7 +15,7 @@ Mode PG menambahkan:
 3. Webhook `payment.paid` ke URL toko (opsional)
 4. Notif Telegram saat lunas (opsional)
 5. Anti double-claim `transactionId` (persist ke file)
-6. Nominal unik otomatis (`base + 1..99`)
+6. Nominal random: default **mati** — karena ShopeePay punya `transactionId` unik, dedup akurat tanpa nominal acak. Aktifkan via env `UNIQUE_AMOUNT=true` kalau perlu.
 
 ## Arsitektur
 
@@ -54,9 +54,9 @@ Response:
   "data": {
     "payment_id": "pay_ab12cd34...",
     "status": "pending",
-    "amount": 15047,
+    "amount": 15000,
     "base_amount": 15000,
-    "unique_suffix": 47,
+    "unique_suffix": 0,
     "qris_url": "https://.../qr/xxxx",
     "expires_at": "...",
     "auto_check": true,
@@ -66,6 +66,8 @@ Response:
 ```
 
 Tampilkan `qris_url` ke pelanggan. Server akan auto-cek mutasi.
+
+> **Catatan:** `amount` = `base_amount` karena random suffix **default false**. Pelanggan bayar pas nominal, tanpa tambah kode unik.
 
 ### 2) Cek status
 ```http
@@ -101,11 +103,11 @@ X-API-Key: <API_KEY>
   "event": "payment.paid",
   "payment_id": "pay_...",
   "external_id": "ORDER-123",
-  "amount": 15047,
+  "amount": 15000,
   "status": "paid",
   "transaction": {
     "transactionId": "...",
-    "amount": 15047,
+    "amount": 15000,
     "status": "success",
     "time": "2026-07-18 19:23:29",
     "issuer": "Gopay"
@@ -124,7 +126,7 @@ Retry: 3x, backoff pendek. Simpan `transactionId` di DB toko juga (defense in de
 | `CORE_PORT` | `4001` | port internal core |
 | `AUTO_CHECK_INTERVAL_MS` | `10000` | interval poll |
 | `AUTO_CHECK_MAX_POLLS` | `120` | max poll (~20 mnt) |
-| `UNIQUE_AMOUNT` | `true` | +1..99 anti tabrakan |
+| `UNIQUE_AMOUNT` | `false` | +1..99 (mati default, karena ShopeePay dedup by transactionId) |
 | `PAYMENT_STORE_PATH` | `./data/payments.json` | persist session |
 
 ## Contoh cURL

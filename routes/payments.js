@@ -59,9 +59,11 @@ function createPaymentRouter({ store, autoChecker, coreBase, apiKey, apiKeyMiddl
     });
   }
 
-  function pickUniqueAmount(baseAmount) {
-    // Add 1..99 suffix so concurrent same-price checkouts don't collide
-    const enable = String(process.env.UNIQUE_AMOUNT || 'true').toLowerCase() !== 'false';
+  // Random amount suffix: MATI secara default.
+  // ShopeePay punya transactionId unik → dedup akurat tanpa nominal acak.
+  // Aktifkan via env UNIQUE_AMOUNT=true kalau mau legacy mode (QRIS statis / GoPay).
+  function pickAmount(baseAmount) {
+    const enable = String(process.env.UNIQUE_AMOUNT || 'false').toLowerCase() !== 'false';
     if (!enable) return { amount: baseAmount, suffix: 0 };
     const suffix = 1 + Math.floor(Math.random() * 99);
     return { amount: baseAmount + suffix, suffix };
@@ -76,7 +78,7 @@ function createPaymentRouter({ store, autoChecker, coreBase, apiKey, apiKeyMiddl
         return res.status(400).json({ success: false, error: 'Provide valid amount (positive integer)' });
       }
 
-      const { amount, suffix } = pickUniqueAmount(baseAmount);
+      const { amount, suffix } = pickAmount(baseAmount);
       const startTime = Math.floor(Date.now() / 1000); // seconds for core
       const webhook_url = body.webhook_url || body.callback_url || null;
       const metadata = body.metadata || {};
